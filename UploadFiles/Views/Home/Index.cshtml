@@ -1,0 +1,288 @@
+﻿@{
+    ViewBag.Title = "Home Page";
+}
+
+<script>
+    var app = angular.module("aplikacioni", []);
+    app.directive('ngFile', ['$parse', function ($parse) {
+        return {
+            restrict: 'A',
+            link: function (scope, element, attrs) {
+                element.bind('change', function () {
+
+                    $parse(attrs.ngFile).assign(scope, element[0].files)
+                    scope.$apply();
+                });
+            }
+        };
+    }]);
+
+    app.filter('Filesize', function () {
+        return function (size) {
+            if (isNaN(size))
+                size = 0;
+
+            if (size < 1024)
+                return size + ' Bytes';
+
+            size /= 1024;
+
+            if (size < 1024)
+                return size.toFixed(2) + ' Kb';
+
+            size /= 1024;
+
+            if (size < 1024)
+                return size.toFixed(2) + ' Mb';
+
+            size /= 1024;
+
+            if (size < 1024)
+                return size.toFixed(2) + ' Gb';
+
+            size /= 1024;
+
+            return size.toFixed(2) + ' Tb';
+        };
+    });
+
+    app.directive('customOnChange', function () {
+        return {
+            restrict: 'A',
+            link: function (scope, element, attrs) {
+                var onChangeHandler = scope.$eval(attrs.customOnChange);
+                element.on('change', onChangeHandler);
+                element.on('$destroy', function () {
+                    element.off();
+                });
+
+            }
+        };
+    });
+
+    app.controller("UploadFiles", function ($scope, $http, $interval, $q) {
+        var ctrl = this;
+
+        ctrl.attempt = "X-Files";
+        ctrl.fajllat = null;
+        ctrl.progress = 0;
+        ctrl.loading = undefined;
+        ctrl.total_size = 0;
+        //ctrl.isBigSize = false;
+        ctrl.total_seconds_to_process = 0;
+        ctrl.intervali = undefined;
+        ctrl.progress_per_mb = 0;
+
+        ctrl.howManyMBs = function (size) {
+
+            if (isNaN(size))
+                size = 0;
+
+            size /= 1024;
+
+            size /= 1024;
+
+            return Math.round(size);
+        }
+
+        $scope.filesAdded = function () {
+
+            ctrl.total_size = 0;
+            $scope.$apply(function () {
+                angular.forEach(ctrl.fajllat, function (file) {
+
+                    ctrl.total_size = ctrl.total_size + file.size;
+                });
+
+                ctrl.progress = 0;
+            })
+
+            let mbs = ctrl.howManyMBs(ctrl.total_size);
+            ctrl.total_seconds_to_process = mbs * 8;
+            ctrl.progress_per_mb = Math.round(ctrl.total_seconds_to_process / 100)
+
+            //if (mbs > 10) {
+            //    ctrl.isBigSize = true;
+            //} else {
+            //    ctrl.isBigSize = false;
+            //}
+        };
+
+        ctrl.canceler = $q.defer();
+
+        ctrl.cancelRequest = function () {
+            ctrl.canceler.resolve();
+            ctrl.loading = false;
+        }
+
+        ctrl.removeFile = function (file, index) {
+            console.log("Files: ", ctrl.fajllat);
+            console.log("Current File: ", file);
+            ctrl.fajllat.splice(index, 1);
+        };
+
+
+        ctrl.uploadFiles = function () {
+
+            ctrl.loading = true;
+
+            var fd = new FormData();
+            angular.forEach(ctrl.fajllat, function (file) {
+                console.log("file:", file);
+                fd.append(file.name, file);
+            });
+
+            fd.append("decReqType","12345")
+            fd.append("fiscal_no","600111222")
+
+            
+            ctrl.canceler = $q.defer();
+            var config = {
+                method: 'POST',
+                url: '/api/UploadFiles/Upload',
+                headers: {
+                    'Content-Type': undefined
+                },
+                timeout: ctrl.canceler.promise,
+                uploadEventHandlers: {
+                    progress: function (e) {
+                        //console.log(e);
+                        //defer.notify(e.loaded * 100 / e.total);
+                        //if (!ctrl.isBigSize) {
+                        //ctrl.progress = Math.round(e.loaded * 100 / e.total) - 1;
+                        //}
+                    }
+                },
+                data: fd
+            };
+
+            //if (ctrl.isBigSize) {
+            ctrl.progress = 1;
+            ctrl.intervali = $interval(function () {
+                if (ctrl.progress < (100 - ctrl.progress_per_mb)) {
+                    ctrl.progress += ctrl.progress_per_mb;
+                } else {
+                    ctrl.progress = 99;
+                }
+                }, 3000);
+            //}
+
+            $http(config).then(
+                function (response) {
+                    console.log("mesazhi:", response);
+                    ctrl.loading = false;
+                    if (angular.isDefined(ctrl.intervali)) {
+                        $interval.cancel(ctrl.intervali);
+                        ctrl.intervali = undefined;
+                    }
+                    ctrl.progress = 100;
+                },
+                function (error) { console.error("errori:", error) }
+            );
+
+        };
+
+        $scope.$on('$destroy', function () {
+            // Make sure that the interval is destroyed 
+            if (angular.isDefined(ctrl.intervali)) {
+                $interval.cancel(ctrl.intervali);
+                ctrl.intervali = undefined;
+            }
+        });
+
+    })
+</script>
+
+<style>
+
+    .mt-20 {
+        margin-top: 20px;
+    }
+    .ml-20 {
+        margin-left: 20px;
+    }
+    .covid-messages {
+        display:flex;
+        align-items:center;
+        margin-top:20px;
+
+    }
+    .right-messages {
+        margin-bottom: 20px;
+    }
+</style>
+
+
+<div class="row" style="margin-top:50px" ng-app="aplikacioni">
+    <div class="col-md-12" ng-controller="UploadFiles as ctrl">
+        <h4>Ngarko pa limit</h4>
+
+
+
+        <form enctype="multipart/form-data">
+            <div>
+                <button class="btn btn-danger" onclick="document.getElementById('getFiles').click()" ng-disabled="ctrl.loading">Add Files</button>
+                <input type='file' id="getFiles" multiple ng-file='ctrl.fajllat' name="fajllat" custom-on-change="filesAdded" style="display:none">
+
+
+                <button type="button" class="btn btn-primary" ng-disabled="ctrl.loading" ng-click="ctrl.uploadFiles()">
+                    Uploado
+                </button>
+
+                <button type="button" class="btn btn-default" ng-click="ctrl.cancelRequest()">
+                    Ndal Procesimin
+                </button>
+            </div>
+
+            <div class="covid-messages">
+                <div class="left-messages">
+                    
+                    
+                    <ol class="breadcrumb" ng-if="ctrl.fajllat">
+                        <li><span ng-if="ctrl.fajllat">Total {{ ctrl.fajllat.length}} fajlla jane zgjedhur</span></li>
+                        <li><span ng-if="ctrl.total_size>0">Madhsia totale: {{ ctrl.total_size | Filesize}}</span></li>
+                    </ol>
+                </div>
+                <div class="right-messages ml-20">
+                    <span style="font-size:14px" ng-if="ctrl.progress == 100" class="label label-success">Dokumentat u ngarkuan me sukses</span>
+                    
+                </div>
+            </div>
+
+            <div class="progress" ng-if="ctrl.fajllat">
+                <div class="progress-bar" ng-class="{'progress-bar-success':ctrl.progress==100}" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: {{ctrl.progress+'%'}}">
+                    {{ctrl.progress}}%
+                </div>
+            </div>
+
+
+            <table class="table table-condensed table-hover mt-20" ng-if="ctrl.fajllat">
+                <thead>
+                    <tr>
+
+                        <th>Nr.</th>
+                        <th>Name</th>
+                        <th>Madhsia</th>
+                        <th>E modifikuar</th>
+                        <th>Lloji</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr ng-repeat="item in ctrl.fajllat">
+                        <td>{{$index+1}}</td>
+                        <td>{{item.name}}</td>
+                        <td>{{item.size | Filesize}}</td>
+                        <td>{{item.lastModified | date:'dd.MM.yyyy  HH:mm'}}</td>
+                        <td>{{item.type}}</td>
+                        <td><a href="" ng-click="ctrl.removeFile(item,$index)"><span class="glyphicon glyphicon-remove"></span></a></td>
+                    </tr>
+                </tbody>
+            </table>
+
+        </form>
+
+
+    </div>
+
+</div>
